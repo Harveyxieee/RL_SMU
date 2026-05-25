@@ -401,6 +401,7 @@ class PORDQN(RDQN):
         device: torch.device = torch.device('cpu'),
         seed: Optional[int] = None,
         writer: Optional[Any] = None,
+        calibrator: Optional[Any] = None,
     ):
         super().__init__(
             obs_dim=obs_dim,
@@ -435,6 +436,7 @@ class PORDQN(RDQN):
         # Robustness related
         self.nu_scale = nu_scale  # Scale of the student-t distribution
         self.nu_df = nu_df  # Degrees of freedom of the student-t distribution
+        self.calibrator = calibrator
 
         x = np.linspace(0, 1, N_nu + 2)
         self.nu_dist_samples = stdtrit(self.nu_df, x[1:-1])*self.nu_scale
@@ -482,8 +484,12 @@ class PORDQN(RDQN):
         interest = info[0].to(self.device)
         cost = info[1].to(self.device)
         reward_fn = self.get_reward_fn(interest, cost)
+        if hasattr(self, "calibrator") and self.calibrator is not None:
+            epsilon_batch = self.calibrator.predict_epsilon(current_states, act_values)
+        else:
+            epsilon_batch = self.sinkhorn_dist
 
-        targets, lambdas, lambda_iters, mask = hq_opt(self.target_q, current_states, act_values, next_states.unsqueeze(1), self.sample_from_nu, reward_fn, self.sinkhorn_dist, self.delta, 1, self.N_nu, self.discount, lamda_inits, self.lamda_max_iter, self.lamda_lr, self.lamda_step_size, self.lamda_gamma, self.norm_ord, not_terminal, self.modify_states, self.device)
+        targets, lambdas, lambda_iters, mask = hq_opt(self.target_q, current_states, act_values, next_states.unsqueeze(1), self.sample_from_nu, reward_fn, epsilon_batch, self.delta, 1, self.N_nu, self.discount, lamda_inits, self.lamda_max_iter, self.lamda_lr, self.lamda_step_size, self.lamda_gamma, self.norm_ord, not_terminal, self.modify_states, self.device)
 
         loss = self.compute_loss_and_update(current_states, actions, targets, mask)
         self.cache_lambdas(lambdas, batch_size, buffer_indices, mask)

@@ -68,7 +68,14 @@ def hq_max(lamda:List[nn.parameter.Parameter],
     lamda_plus = torch.nn.Softplus()(torch.stack(lamda)[lamda_opt]) # enforce positivity
     inner_exp, c = inner_expectation(lamda_plus, delta, discount, r[lamda_opt], q_max[lamda_opt], cost[lamda_opt], not_terminal[lamda_opt])
     outer_exp = outer_expectation(inner_exp, c) # (batch_size)
-    hq = -lamda_plus * (epsilon + delta * outer_exp)
+
+    if not torch.is_tensor(epsilon):
+        epsilon_used = torch.full_like(outer_exp, float(epsilon))
+    else:
+        epsilon_used = epsilon.to(outer_exp.device).reshape(-1)
+        epsilon_used = epsilon_used[lamda_opt]
+
+    hq = -lamda_plus * (epsilon_used + delta * outer_exp)
     return hq
 
 def hq_opt(qfunc: torch.nn.Module,
@@ -145,7 +152,14 @@ def hq_opt(qfunc: torch.nn.Module,
         with torch.no_grad():
             exponent = -(cost/delta)
             c = exponent.amax(dim=2, keepdim=True)
-            ebar = epsilon + delta * (c.squeeze(-1) + torch.log(torch.exp(exponent-c).mean(dim=2))).mean(dim=1)
+            if not torch.is_tensor(epsilon):
+                epsilon_batch = torch.full((batch_size,), epsilon, device=device)
+            else:
+                epsilon_batch = epsilon.to(device).reshape(batch_size)
+
+            ebar = epsilon_batch + delta * (
+                    c.squeeze(-1) + torch.log(torch.exp(exponent - c).mean(dim=2))
+            ).mean(dim=1)
             ebar_pos = (ebar > 0).squeeze()
 
     # Set up lambda
