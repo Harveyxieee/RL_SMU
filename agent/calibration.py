@@ -1,4 +1,6 @@
 ## first edition: global conformal
+import torch
+
 class ResidualCalibrator:
     def __init__(
         self,
